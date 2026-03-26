@@ -59,6 +59,7 @@ function HeaderCard({
   diaSelecionado,
   ultimoDiaDoMes,
   carregando,
+  podeEditar,
   onTrocarConsultor,
   onDiaChange,
 }: {
@@ -66,6 +67,7 @@ function HeaderCard({
   diaSelecionado: number;
   ultimoDiaDoMes: number;
   carregando: string | null;
+  podeEditar: boolean;
   onTrocarConsultor: () => void;
   onDiaChange: (dia: number) => void;
 }) {
@@ -125,10 +127,14 @@ function HeaderCard({
           <p className="text-soft m-0 text-[13px]">Status</p>
           <p
             className={`metric-number mt-3 text-[22px] font-black leading-none ${
-              carregando ? "text-yellow-300" : "text-emerald-400"
+              carregando
+                ? "text-yellow-300"
+                : podeEditar
+                ? "text-emerald-400"
+                : "text-orange-300"
             }`}
           >
-            {carregando ? "Salvando..." : "Pronto"}
+            {carregando ? "Salvando..." : podeEditar ? "Pronto" : "Somente leitura"}
           </p>
         </div>
       </div>
@@ -141,6 +147,7 @@ function EtapaCard({
   valorDia,
   valorMes,
   carregando,
+  podeEditar,
   onSomar,
   onSubtrair,
 }: {
@@ -148,6 +155,7 @@ function EtapaCard({
   valorDia: number;
   valorMes: number;
   carregando: string | null;
+  podeEditar: boolean;
   onSomar: () => void;
   onSubtrair: () => void;
 }) {
@@ -177,16 +185,16 @@ function EtapaCard({
           <div className="flex items-center gap-2">
             <button
               onClick={onSubtrair}
-              disabled={carregando !== null}
-              className="h-12 w-12 rounded-2xl border border-white/10 bg-white/6 text-[24px] font-black text-white hover:bg-white/10 disabled:cursor-not-allowed disabled:opacity-60"
+              disabled={carregando !== null || !podeEditar}
+              className="h-12 w-12 rounded-2xl border border-white/10 bg-white/6 text-[24px] font-black text-white hover:bg-white/10 disabled:cursor-not-allowed disabled:opacity-40"
             >
               {carregando === `${etapa}-subtrair` ? "..." : "−"}
             </button>
 
             <button
               onClick={onSomar}
-              disabled={carregando !== null}
-              className="h-12 w-14 rounded-2xl border-0 text-[26px] font-black text-white disabled:cursor-not-allowed disabled:opacity-60"
+              disabled={carregando !== null || !podeEditar}
+              className="h-12 w-14 rounded-2xl border-0 text-[26px] font-black text-white disabled:cursor-not-allowed disabled:opacity-40"
               style={{
                 background: `linear-gradient(135deg, ${config.cor}, ${config.cor}cc)`,
                 boxShadow: config.shadow,
@@ -233,6 +241,8 @@ export default function ConsultorPage() {
   const [mensagem, setMensagem] = useState("");
   const [valoresDia, setValoresDia] = useState<Valores>({});
   const [valoresMes, setValoresMes] = useState<Valores>({});
+
+  const podeEditar = diaSelecionado <= hoje;
 
   useEffect(() => {
     const nome = localStorage.getItem("consultor_nome");
@@ -282,6 +292,11 @@ export default function ConsultorPage() {
   }
 
   async function lancar(etapa: string, operacao: "somar" | "subtrair") {
+    if (!podeEditar) {
+      setMensagem("Dias futuros estão bloqueados para edição.");
+      return;
+    }
+
     const delta = operacao === "somar" ? 1 : -1;
 
     const valorDiaAnterior = valoresDia[etapa] ?? 0;
@@ -367,6 +382,7 @@ export default function ConsultorPage() {
           diaSelecionado={diaSelecionado}
           ultimoDiaDoMes={ultimoDiaDoMes}
           carregando={carregando}
+          podeEditar={podeEditar}
           onTrocarConsultor={trocarConsultor}
           onDiaChange={setDiaSelecionado}
         />
@@ -379,6 +395,7 @@ export default function ConsultorPage() {
               valorDia={valoresDia[etapa] ?? 0}
               valorMes={valoresMes[etapa] ?? 0}
               carregando={carregando}
+              podeEditar={podeEditar}
               onSomar={() => lancar(etapa, "somar")}
               onSubtrair={() => lancar(etapa, "subtrair")}
             />
