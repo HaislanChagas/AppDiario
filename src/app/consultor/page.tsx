@@ -235,7 +235,7 @@ export default function ConsultorPage() {
   const ultimoDiaDoMes = new Date(anoAtual, mesAtual + 1, 0).getDate();
 
   const [consultorNome, setConsultorNome] = useState("");
-  const [consultorAba, setConsultorAba] = useState("");
+  const [sessaoCarregada, setSessaoCarregada] = useState(false);
   const [diaSelecionado, setDiaSelecionado] = useState<number>(hoje);
   const [carregando, setCarregando] = useState<string | null>(null);
   const [mensagem, setMensagem] = useState("");
@@ -246,22 +246,20 @@ export default function ConsultorPage() {
 
   useEffect(() => {
     const nome = localStorage.getItem("consultor_nome");
-    const aba = localStorage.getItem("consultor_aba");
 
-    if (!nome || !aba) {
-      router.push("/");
+    if (!nome) {
+      router.replace("/");
       return;
     }
 
     setConsultorNome(nome);
-    setConsultorAba(aba);
+    setSessaoCarregada(true);
   }, [router]);
 
   useEffect(() => {
-    if (consultorNome && consultorAba && diaSelecionado) {
-      carregarResumo(diaSelecionado);
-    }
-  }, [consultorNome, consultorAba, diaSelecionado]);
+    if (!sessaoCarregada || !consultorNome) return;
+    carregarResumo(diaSelecionado);
+  }, [sessaoCarregada, consultorNome, diaSelecionado]);
 
   async function carregarResumo(dia: number) {
     try {
@@ -272,7 +270,6 @@ export default function ConsultorPage() {
         },
         body: JSON.stringify({
           consultorNome,
-          consultorAba,
           dia,
         }),
       });
@@ -286,6 +283,7 @@ export default function ConsultorPage() {
 
       setValoresDia(data.valoresDia || {});
       setValoresMes(data.valoresMes || {});
+      setMensagem("");
     } catch {
       setMensagem("Erro ao carregar os dados do dia.");
     }
@@ -326,7 +324,6 @@ export default function ConsultorPage() {
         },
         body: JSON.stringify({
           consultorNome,
-          consultorAba,
           etapa,
           operacao,
           dia: diaSelecionado,
@@ -370,8 +367,19 @@ export default function ConsultorPage() {
 
   function trocarConsultor() {
     localStorage.removeItem("consultor_nome");
-    localStorage.removeItem("consultor_aba");
-    router.push("/");
+    router.replace("/");
+  }
+
+  if (!sessaoCarregada) {
+    return (
+      <main className="app-shell">
+        <div className="app-container">
+          <div className="glass-card rounded-[30px] p-6 text-white">
+            Carregando painel...
+          </div>
+        </div>
+      </main>
+    );
   }
 
   return (

@@ -1,36 +1,33 @@
-import { listarAbas } from "./sheets";
-
-const ABAS_EXCLUIDAS = [
-  "PROCESSOS_QUENTES",
-  "PROCESSOS QUENTES",
-  "Processos Quentes",
-  "PIPE",
-  "Pipe",
-  "METAS",
-  "Meta",
-  "META",
-  "ROLETA",
-  "Roleta",
-  "ROLETA - CONTROLE DE LEADS",
-  "ROLETA – CONTROLE DE LEADS",
-];
-
-function normalizar(texto: string) {
-  return texto.trim().toLowerCase();
-}
+import { supabase } from "./supabase";
 
 export async function listarConsultores() {
-  const abas = await listarAbas();
+  const { data, error } = await supabase
+    .from("usuarios")
+    .select("id, nome")
+    .eq("ativo", true)
+    .order("nome", { ascending: true });
 
-  return abas
-    .filter((aba) => !ABAS_EXCLUIDAS.map(normalizar).includes(normalizar(aba)))
-    .map((aba) => ({
-      nome: aba,
-      aba: aba,
-    }));
+  if (error) {
+    throw new Error(`Erro ao listar consultores: ${error.message}`);
+  }
+
+  return (data || []).map((usuario) => ({
+    id: usuario.id,
+    nome: usuario.nome,
+  }));
 }
 
 export async function encontrarConsultorPorNome(nome: string) {
-  const consultores = await listarConsultores();
-  return consultores.find((c) => c.nome === nome) || null;
+  const { data, error } = await supabase
+    .from("usuarios")
+    .select("id, nome")
+    .eq("nome", nome)
+    .eq("ativo", true)
+    .maybeSingle();
+
+  if (error) {
+    throw new Error(`Erro ao buscar consultor: ${error.message}`);
+  }
+
+  return data || null;
 }

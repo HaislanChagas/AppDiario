@@ -1,33 +1,12 @@
 import { NextRequest, NextResponse } from "next/server";
-import { lerCelula, escreverCelula } from "@/lib/sheets";
-
-const MAPA_LINHAS: Record<string, number> = {
-  "Leads": 5,
-  "Atendimento": 6,
-  "Agendamento Visita": 7,
-  "Pasta Docs": 8,
-  "Crédito Aprovado": 9,
-};
-
-function numeroParaColuna(numero: number): string {
-  let coluna = "";
-  let n = numero;
-
-  while (n > 0) {
-    const resto = (n - 1) % 26;
-    coluna = String.fromCharCode(65 + resto) + coluna;
-    n = Math.floor((n - 1) / 26);
-  }
-
-  return coluna;
-}
+import { supabase } from "@/lib/supabase";
 
 export async function POST(req: NextRequest) {
   try {
     const body = await req.json();
-    const { consultorNome, consultorAba, etapa, operacao, dia } = body;
+    const { consultorNome, etapa, operacao, dia } = body;
 
-    if (!consultorNome || !consultorAba || !etapa || !operacao || !dia) {
+    if (!consultorNome || !etapa || !operacao || !dia) {
       return NextResponse.json(
         { error: "Dados obrigatórios ausentes." },
         { status: 400 }
@@ -35,13 +14,10 @@ export async function POST(req: NextRequest) {
     }
 
     const diaNumero = Number(dia);
-
     const agora = new Date();
-    const ultimoDiaDoMes = new Date(
-      agora.getFullYear(),
-      agora.getMonth() + 1,
-      0
-    ).getDate();
+    const ano = agora.getFullYear();
+    const mes = agora.getMonth() + 1;
+    const ultimoDiaDoMes = new Date(ano, mes, 0).getDate();
 
     if (
       Number.isNaN(diaNumero) ||
@@ -51,38 +27,85 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: "Dia inválido." }, { status: 400 });
     }
 
-    const linha = MAPA_LINHAS[etapa];
-    if (!linha) {
-      return NextResponse.json({ error: "Etapa inválida." }, { status: 400 });
+    const dataReferencia = `${ano}-${String(mes).padStart(2, "0")}-${String(diaNumero).padStart(2, "0")}`;
+
+    const { data: usuario, error: usuarioError } = await supabase
+      .from("usuarios")
+      .select("id, nome")
+      .eq("nome", consultorNome)
+      .eq("ativo", true)
+      .maybeSingle();
+
+    if (usuarioError || !usuario) {
+      return NextResponse.json({ error: "Consultor não encontrado." }, { status: 404 });
     }
 
-    const colunaNumero = diaNumero + 1;
-    const coluna = numeroParaColuna(colunaNumero);
-    const celula = `${coluna}${linha}`;
+    const { data: etapaRow, error: etapaError } = await supabase
+      .from("etapas")
+      .select("id, nome")
+      .eq("nome", etapa)
+      .eq("ativo", true)
+      .maybeSingle();
 
-    const atualBruto = await lerCelula(consultorAba, celula);
-    const atual = Number(String(atualBruto).replace(",", ".")) || 0;
+    if (etapaError || !etapaRow) {
+      return NextResponse.json({ error: "Etapa inválida." }, { status: 404 });
+    }
 
+    const { data: registroAtual, error: registroError } = await supabase
+      .from("produtividade_diaria")
+      .select("id, quantidade")
+      .eq("usuario_id", usuario.id)
+      .eq("etapa_id", etapaRow.id)
+      .eq("data_referencia", dataReferencia)
+      .maybeSingle();
+
+    if (registroError) {
+      return NextResponse.json(
+        { error: "Erro ao consultar lançamento atual." },
+        { status: 500 }
+      );
+    }
+
+    const atual = registroAtual?.quantidade ?? 0;
     let novoValor = atual;
+
     if (operacao === "somar") novoValor += 1;
     if (operacao === "subtrair") novoValor = Math.max(0, atual - 1);
 
-    await escreverCelula(consultorAba, celula, novoValor);
+    const payload = {
+      usuario_id: usuario.id,
+      etapa_id: etapaRow.id,
+      data_referencia: dataReferencia,
+      quantidade: novoValor,
+      updated_at: new Date().toISOString(),
+    };
+
+    const { error: upsertError } = await supabase
+      .from("produtividade_diaria")
+      .upsert(payload, {
+        onConflict: "usuario_id,etapa_id,data_referencia",
+      });
+
+    if (upsertError) {
+      return NextResponse.json(
+        { error: "Erro ao salvar lançamento." },
+        { status: 500 }
+      );
+    }
 
     return NextResponse.json({
       ok: true,
-      consultor: consultorNome,
-      aba: consultorAba,
-      etapa,
+      consultor: usuario.nome,
+      etapa: etapaRow.nome,
       dia: diaNumero,
-      celula,
+      dataReferencia,
       valorAnterior: atual,
       valorAtual: novoValor,
     });
   } catch (error) {
     console.error(error);
     return NextResponse.json(
-      { error: "Erro ao lançar no Google Sheets." },
+      { error: "Erro ao lançar no Supabase." },
       { status: 500 }
     );
   }

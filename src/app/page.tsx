@@ -4,8 +4,8 @@ import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 
 type Consultor = {
+  id: string;
   nome: string;
-  aba: string;
 };
 
 export default function HomePage() {
@@ -42,7 +42,6 @@ export default function HomePage() {
     if (!consultorSelecionado) return;
 
     localStorage.setItem("consultor_nome", consultorSelecionado.nome);
-    localStorage.setItem("consultor_aba", consultorSelecionado.aba);
 
     router.push("/consultor");
   }
@@ -149,7 +148,7 @@ export default function HomePage() {
                 Selecione seu nome
               </option>
               {consultores.map((c) => (
-                <option key={c.nome} value={c.nome} style={{ color: "#111" }}>
+                <option key={c.id} value={c.nome} style={{ color: "#111" }}>
                   {c.nome}
                 </option>
               ))}

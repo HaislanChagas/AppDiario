@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { lerIntervalo } from "@/lib/sheets";
+import { supabase } from "@/lib/supabase";
 
 const ETAPAS = [
   "Leads",
@@ -9,43 +9,23 @@ const ETAPAS = [
   "Crédito Aprovado",
 ];
 
-function parseNumero(valor: unknown) {
-  return Number(String(valor ?? "0").replace(",", ".")) || 0;
-}
-
-function numeroParaColuna(numero: number): string {
-  let coluna = "";
-  let n = numero;
-
-  while (n > 0) {
-    const resto = (n - 1) % 26;
-    coluna = String.fromCharCode(65 + resto) + coluna;
-    n = Math.floor((n - 1) / 26);
-  }
-
-  return coluna;
-}
-
 export async function POST(req: NextRequest) {
   try {
     const body = await req.json();
-    const { consultorNome, consultorAba, dia } = body;
+    const { consultorNome, dia } = body;
 
-    if (!consultorNome || !consultorAba || !dia) {
+    if (!consultorNome || !dia) {
       return NextResponse.json(
-        { error: "Consultor, aba ou dia não informado." },
+        { error: "Consultor ou dia não informado." },
         { status: 400 }
       );
     }
 
     const diaNumero = Number(dia);
-
     const agora = new Date();
-    const ultimoDiaDoMes = new Date(
-      agora.getFullYear(),
-      agora.getMonth() + 1,
-      0
-    ).getDate();
+    const ano = agora.getFullYear();
+    const mes = agora.getMonth() + 1;
+    const ultimoDiaDoMes = new Date(ano, mes, 0).getDate();
 
     if (
       Number.isNaN(diaNumero) ||
@@ -55,32 +35,64 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: "Dia inválido." }, { status: 400 });
     }
 
-    const colunaFim = numeroParaColuna(ultimoDiaDoMes + 1);
-    const intervalo = `B5:${colunaFim}9`;
+    const dataReferencia = `${ano}-${String(mes).padStart(2, "0")}-${String(diaNumero).padStart(2, "0")}`;
+    const inicioMes = `${ano}-${String(mes).padStart(2, "0")}-01`;
+    const fimMes = `${ano}-${String(mes).padStart(2, "0")}-${String(ultimoDiaDoMes).padStart(2, "0")}`;
 
-    const bloco = await lerIntervalo(consultorAba, intervalo);
+    const { data: usuario, error: usuarioError } = await supabase
+      .from("usuarios")
+      .select("id, nome")
+      .eq("nome", consultorNome)
+      .eq("ativo", true)
+      .maybeSingle();
+
+    if (usuarioError || !usuario) {
+      return NextResponse.json({ error: "Consultor não encontrado." }, { status: 404 });
+    }
+
+    const { data: registros, error: registrosError } = await supabase
+      .from("produtividade_diaria")
+      .select(`
+        quantidade,
+        data_referencia,
+        etapas!inner(nome)
+      `)
+      .eq("usuario_id", usuario.id)
+      .gte("data_referencia", inicioMes)
+      .lte("data_referencia", fimMes);
+
+    if (registrosError) {
+      return NextResponse.json(
+        { error: "Erro ao buscar resumo do dia." },
+        { status: 500 }
+      );
+    }
 
     const valoresDia: Record<string, number> = {};
     const valoresMes: Record<string, number> = {};
 
-    for (let i = 0; i < ETAPAS.length; i++) {
-      const etapa = ETAPAS[i];
-      const linha = bloco[i] || [];
+    for (const etapa of ETAPAS) {
+      valoresDia[etapa] = 0;
+      valoresMes[etapa] = 0;
+    }
 
-      const valorDia = parseNumero(linha[diaNumero - 1]);
-      const totalMes = linha.reduce(
-        (acc: number, item: unknown) => acc + parseNumero(item),
-        0
-      );
+    for (const registro of registros || []) {
+      const nomeEtapa = Array.isArray(registro.etapas)
+        ? registro.etapas[0]?.nome
+        : (registro.etapas as { nome: string })?.nome;
 
-      valoresDia[etapa] = valorDia;
-      valoresMes[etapa] = totalMes;
+      if (!nomeEtapa) continue;
+
+      valoresMes[nomeEtapa] += registro.quantidade;
+
+      if (registro.data_referencia === dataReferencia) {
+        valoresDia[nomeEtapa] += registro.quantidade;
+      }
     }
 
     return NextResponse.json({
       ok: true,
-      consultor: consultorNome,
-      aba: consultorAba,
+      consultor: usuario.nome,
       dia: diaNumero,
       valoresDia,
       valoresMes,
