@@ -6,7 +6,8 @@ import { useRouter } from "next/navigation";
 const etapas = [
   "Leads",
   "Atendimento",
-  "Agendamento Visita",
+  "Visitas Agendadas",
+  "Visitas Realizadas",
   "Pasta Docs",
   "Crédito Aprovado",
 ];
@@ -34,11 +35,17 @@ const etapaConfig: Record<
     bg: "linear-gradient(135deg, rgba(167,139,250,0.18), rgba(167,139,250,0.06))",
     shadow: "0 0 24px rgba(167,139,250,0.20)",
   },
-  "Agendamento Visita": {
+  "Visitas Agendadas": {
     emoji: "📅",
     cor: "#f59e0b",
     bg: "linear-gradient(135deg, rgba(245,158,11,0.18), rgba(245,158,11,0.06))",
     shadow: "0 0 24px rgba(245,158,11,0.20)",
+  },
+  "Visitas Realizadas": {
+    emoji: "🏠",
+    cor: "#fb7185",
+    bg: "linear-gradient(135deg, rgba(251,113,133,0.18), rgba(251,113,133,0.06))",
+    shadow: "0 0 24px rgba(251,113,133,0.20)",
   },
   "Pasta Docs": {
     emoji: "📂",

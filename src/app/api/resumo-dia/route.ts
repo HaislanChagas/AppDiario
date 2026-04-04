@@ -4,7 +4,8 @@ import { supabase } from "@/lib/supabase";
 const ETAPAS = [
   "Leads",
   "Atendimento",
-  "Agendamento Visita",
+  "Visitas Agendadas",
+  "Visitas Realizadas",
   "Pasta Docs",
   "Crédito Aprovado",
 ];
