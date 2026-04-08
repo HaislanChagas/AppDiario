@@ -4,9 +4,15 @@ import { supabase } from "@/lib/supabase";
 export async function POST(req: NextRequest) {
   try {
     const body = await req.json();
-    const { consultorNome, etapa, operacao, dia, quantidade } = body;
+    const { consultorNome, etapa, dia, quantidade } = body;
 
-    if (!consultorNome || !etapa || !operacao || !dia) {
+    if (
+      !consultorNome ||
+      !etapa ||
+      !dia ||
+      quantidade === undefined ||
+      quantidade === null
+    ) {
       return NextResponse.json(
         { error: "Dados obrigatórios ausentes." },
         { status: 400 }
@@ -14,6 +20,8 @@ export async function POST(req: NextRequest) {
     }
 
     const diaNumero = Number(dia);
+    const quantidadeNumero = Number(quantidade);
+
     const agora = new Date();
     const ano = agora.getFullYear();
     const mes = agora.getMonth() + 1;
@@ -27,6 +35,17 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: "Dia inválido." }, { status: 400 });
     }
 
+    if (
+      Number.isNaN(quantidadeNumero) ||
+      quantidadeNumero < 0 ||
+      !Number.isInteger(quantidadeNumero)
+    ) {
+      return NextResponse.json(
+        { error: "Quantidade inválida." },
+        { status: 400 }
+      );
+    }
+
     const dataReferencia = `${ano}-${String(mes).padStart(2, "0")}-${String(diaNumero).padStart(2, "0")}`;
 
     const { data: usuario, error: usuarioError } = await supabase
@@ -37,7 +56,10 @@ export async function POST(req: NextRequest) {
       .maybeSingle();
 
     if (usuarioError || !usuario) {
-      return NextResponse.json({ error: "Consultor não encontrado." }, { status: 404 });
+      return NextResponse.json(
+        { error: "Consultor não encontrado." },
+        { status: 404 }
+      );
     }
 
     const { data: etapaRow, error: etapaError } = await supabase
@@ -48,7 +70,10 @@ export async function POST(req: NextRequest) {
       .maybeSingle();
 
     if (etapaError || !etapaRow) {
-      return NextResponse.json({ error: "Etapa inválida." }, { status: 404 });
+      return NextResponse.json(
+        { error: "Etapa inválida." },
+        { status: 404 }
+      );
     }
 
     const { data: registroAtual, error: registroError } = await supabase
@@ -61,41 +86,18 @@ export async function POST(req: NextRequest) {
 
     if (registroError) {
       return NextResponse.json(
-        { error: "Erro ao consultar lançamento atual." },
+        { error: "Erro ao consultar valor atual." },
         { status: 500 }
       );
     }
 
-    const atual = registroAtual?.quantidade ?? 0;
-    let novoValor = atual;
-
-    if (operacao === "somar") {
-      novoValor += 1;
-    } else if (operacao === "subtrair") {
-      novoValor = Math.max(0, atual - 1);
-    } else if (operacao === "definir") {
-      const valorInformado = Number(quantidade);
-
-      if (Number.isNaN(valorInformado) || valorInformado < 0) {
-        return NextResponse.json(
-          { error: "Quantidade inválida." },
-          { status: 400 }
-        );
-      }
-
-      novoValor = Math.floor(valorInformado);
-    } else {
-      return NextResponse.json(
-        { error: "Operação inválida." },
-        { status: 400 }
-      );
-    }
+    const valorAnterior = registroAtual?.quantidade ?? 0;
 
     const payload = {
       usuario_id: usuario.id,
       etapa_id: etapaRow.id,
       data_referencia: dataReferencia,
-      quantidade: novoValor,
+      quantidade: quantidadeNumero,
       updated_at: new Date().toISOString(),
     };
 
@@ -107,7 +109,7 @@ export async function POST(req: NextRequest) {
 
     if (upsertError) {
       return NextResponse.json(
-        { error: "Erro ao salvar lançamento." },
+        { error: "Erro ao salvar valor manual." },
         { status: 500 }
       );
     }
@@ -118,13 +120,13 @@ export async function POST(req: NextRequest) {
       etapa: etapaRow.nome,
       dia: diaNumero,
       dataReferencia,
-      valorAnterior: atual,
-      valorAtual: novoValor,
+      valorAnterior,
+      valorAtual: quantidadeNumero,
     });
   } catch (error) {
     console.error(error);
     return NextResponse.json(
-      { error: "Erro ao lançar no Supabase." },
+      { error: "Erro ao definir valor manual." },
       { status: 500 }
     );
   }

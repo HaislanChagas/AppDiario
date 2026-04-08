@@ -6,8 +6,7 @@ import { useRouter } from "next/navigation";
 const etapas = [
   "Leads",
   "Atendimento",
-  "Visitas Agendadas",
-  "Visitas Realizadas",
+  "Agendamento Visita",
   "Pasta Docs",
   "Crédito Aprovado",
 ];
@@ -35,17 +34,11 @@ const etapaConfig: Record<
     bg: "linear-gradient(135deg, rgba(167,139,250,0.18), rgba(167,139,250,0.06))",
     shadow: "0 0 24px rgba(167,139,250,0.20)",
   },
-  "Visitas Agendadas": {
+  "Agendamento Visita": {
     emoji: "📅",
     cor: "#f59e0b",
     bg: "linear-gradient(135deg, rgba(245,158,11,0.18), rgba(245,158,11,0.06))",
     shadow: "0 0 24px rgba(245,158,11,0.20)",
-  },
-  "Visitas Realizadas": {
-    emoji: "🏠",
-    cor: "#fb7185",
-    bg: "linear-gradient(135deg, rgba(251,113,133,0.18), rgba(251,113,133,0.06))",
-    shadow: "0 0 24px rgba(251,113,133,0.20)",
   },
   "Pasta Docs": {
     emoji: "📂",
@@ -153,18 +146,24 @@ function EtapaCard({
   etapa,
   valorDia,
   valorMes,
+  valorInput,
   carregando,
   podeEditar,
   onSomar,
   onSubtrair,
+  onInputChange,
+  onSalvarManual,
 }: {
   etapa: string;
   valorDia: number;
   valorMes: number;
+  valorInput: string;
   carregando: string | null;
   podeEditar: boolean;
   onSomar: () => void;
   onSubtrair: () => void;
+  onInputChange: (valor: string) => void;
+  onSalvarManual: () => void;
 }) {
   const config = etapaConfig[etapa];
 
@@ -227,6 +226,31 @@ function EtapaCard({
             </p>
           </div>
         </div>
+
+        <div className="soft-panel rounded-3xl p-4">
+          <p className="text-softer m-0 text-[13px]">Digitar valor manual</p>
+
+          <div className="mt-3 flex gap-2">
+            <input
+              type="number"
+              min="0"
+              inputMode="numeric"
+              value={valorInput}
+              onChange={(e) => onInputChange(e.target.value)}
+              disabled={carregando !== null || !podeEditar}
+              className="h-12 flex-1 rounded-2xl border border-white/10 bg-white/8 px-4 text-[16px] font-semibold text-white outline-none disabled:cursor-not-allowed disabled:opacity-50"
+              placeholder="Digite o valor"
+            />
+
+            <button
+              onClick={onSalvarManual}
+              disabled={carregando !== null || !podeEditar}
+              className="h-12 rounded-2xl border border-white/10 bg-white/10 px-4 text-[14px] font-bold text-white hover:bg-white/15 disabled:cursor-not-allowed disabled:opacity-50"
+            >
+              {carregando === `${etapa}-definir` ? "Salvando..." : "Salvar"}
+            </button>
+          </div>
+        </div>
       </div>
     </section>
   );
@@ -248,6 +272,7 @@ export default function ConsultorPage() {
   const [mensagem, setMensagem] = useState("");
   const [valoresDia, setValoresDia] = useState<Valores>({});
   const [valoresMes, setValoresMes] = useState<Valores>({});
+  const [inputs, setInputs] = useState<Record<string, string>>({});
 
   const podeEditar = diaSelecionado <= hoje;
 
@@ -267,6 +292,14 @@ export default function ConsultorPage() {
     if (!sessaoCarregada || !consultorNome) return;
     carregarResumo(diaSelecionado);
   }, [sessaoCarregada, consultorNome, diaSelecionado]);
+
+  useEffect(() => {
+    const novosInputs: Record<string, string> = {};
+    for (const etapa of etapas) {
+      novosInputs[etapa] = String(valoresDia[etapa] ?? 0);
+    }
+    setInputs(novosInputs);
+  }, [valoresDia]);
 
   async function carregarResumo(dia: number) {
     try {
@@ -372,6 +405,87 @@ export default function ConsultorPage() {
     }
   }
 
+  async function salvarValorManual(etapa: string) {
+    if (!podeEditar) {
+      setMensagem("Dias futuros estão bloqueados para edição.");
+      return;
+    }
+
+    const valorDigitado = Number(inputs[etapa] ?? "0");
+
+    if (Number.isNaN(valorDigitado) || valorDigitado < 0) {
+      setMensagem("Digite um valor válido.");
+      return;
+    }
+
+    const valorDiaAnterior = valoresDia[etapa] ?? 0;
+    const valorMesAnterior = valoresMes[etapa] ?? 0;
+    const novoValorDia = Math.floor(valorDigitado);
+    const novoValorMes = valorMesAnterior - valorDiaAnterior + novoValorDia;
+
+    setCarregando(`${etapa}-definir`);
+    setMensagem("");
+
+    setValoresDia((prev) => ({
+      ...prev,
+      [etapa]: novoValorDia,
+    }));
+
+    setValoresMes((prev) => ({
+      ...prev,
+      [etapa]: Math.max(0, novoValorMes),
+    }));
+
+    try {
+      const res = await fetch("/api/lancar", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          consultorNome,
+          etapa,
+          operacao: "definir",
+          quantidade: novoValorDia,
+          dia: diaSelecionado,
+        }),
+      });
+
+      const data = await res.json();
+
+      if (!res.ok) {
+        setValoresDia((prev) => ({
+          ...prev,
+          [etapa]: valorDiaAnterior,
+        }));
+
+        setValoresMes((prev) => ({
+          ...prev,
+          [etapa]: valorMesAnterior,
+        }));
+
+        setMensagem(data.error || "Erro ao salvar valor.");
+        return;
+      }
+
+      setMensagem(`${data.etapa} do dia ${data.dia} definido como ${data.valorAtual}.`);
+    } catch {
+      setValoresDia((prev) => ({
+        ...prev,
+        [etapa]: valorDiaAnterior,
+      }));
+
+      setValoresMes((prev) => ({
+        ...prev,
+        [etapa]: valorMesAnterior,
+      }));
+
+      setMensagem("Erro de conexão.");
+    } finally {
+      setCarregando(null);
+    }
+  }
+
   function trocarConsultor() {
     localStorage.removeItem("consultor_nome");
     router.replace("/");
@@ -409,10 +523,15 @@ export default function ConsultorPage() {
               etapa={etapa}
               valorDia={valoresDia[etapa] ?? 0}
               valorMes={valoresMes[etapa] ?? 0}
+              valorInput={inputs[etapa] ?? ""}
               carregando={carregando}
               podeEditar={podeEditar}
               onSomar={() => lancar(etapa, "somar")}
               onSubtrair={() => lancar(etapa, "subtrair")}
+              onInputChange={(valor) =>
+                setInputs((prev) => ({ ...prev, [etapa]: valor }))
+              }
+              onSalvarManual={() => salvarValorManual(etapa)}
             />
           ))}
         </div>
